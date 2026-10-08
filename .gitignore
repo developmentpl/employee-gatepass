@@ -1,0 +1,6 @@
+node_modules/
+client/dist/
+server/.env
+server/uploads/photos/*
+!server/uploads/photos/.gitkeep
+_to_delete/

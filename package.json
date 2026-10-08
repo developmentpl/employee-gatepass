@@ -1,0 +1,16 @@
+{
+  "name": "harman-employee-gatepass",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Harman Employee Gate Pass – digital gate pass with approvals and eSSL attendance",
+  "scripts": {
+    "setup": "npm install --prefix server && npm install --prefix client",
+    "build": "npm run build --prefix client",
+    "start": "npm start --prefix server",
+    "seed:demo": "npm run seed:demo --prefix server",
+    "railway:build": "npm ci --prefix server --omit=dev && npm ci --prefix client --include=dev && npm run build --prefix client"
+  },
+  "engines": {
+    "node": "24.x"
+  }
+}
