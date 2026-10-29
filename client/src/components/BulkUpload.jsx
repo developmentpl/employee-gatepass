@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Download, FileSpreadsheet, Upload, ArrowLeft } from 'lucide-react';
 import { api, download } from '../api.js';
-import { Modal, Alert, StatusBadge, Tabs, useToast } from './ui.jsx';
+import { Modal, Alert, StatusBadge, Tabs, useToast, statusLabel } from './ui.jsx';
 
 /**
  * Generic bulk upload: download sample → choose file → preview with duplicate/error check → import.
@@ -131,11 +131,14 @@ export default function BulkUpload({ title, base, sampleName, columns, importabl
               <Tabs
                 value={tab}
                 onChange={setTab}
-                items={[{ value: 'all', label: 'All', count: preview.counts.total }, ...statuses.map(([k, v]) => ({ value: k, label: k[0].toUpperCase() + k.slice(1), count: v }))]}
+                items={[{ value: 'all', label: 'All', count: preview.counts.total }, ...statuses.map(([k, v]) => ({ value: k, label: statusLabel(k), count: v }))]}
               />
             </div>
             {preview.counts.duplicate > 0 && (
-              <Alert type="warn">{preview.counts.duplicate} row(s) are duplicates and will be skipped, so nothing is entered twice.</Alert>
+              <Alert type="warn">{preview.counts.duplicate} row(s) are already in the system with nothing to change. They will be skipped, so nobody is added twice.</Alert>
+            )}
+            {preview.counts.update > 0 && (
+              <Alert type="info">{preview.counts.update} row(s) are employees already in the system. Their details stay the same; only their authorities will be updated.</Alert>
             )}
             {preview.counts.error > 0 && <Alert type="error">{preview.counts.error} row(s) have errors and will be skipped. Fix them in the file and upload again if needed.</Alert>}
             <div className="card table-wrap" style={{ maxHeight: '52vh', overflowY: 'auto' }}>
@@ -144,8 +147,8 @@ export default function BulkUpload({ title, base, sampleName, columns, importabl
                   <tr>
                     <th>Row</th>
                     <th>Status</th>
+                    <th style={{ minWidth: 280 }}>Notes</th>
                     {columns.map((c) => <th key={c.key}>{c.label}</th>)}
-                    <th>Notes</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -153,8 +156,8 @@ export default function BulkUpload({ title, base, sampleName, columns, importabl
                     <tr key={r._row}>
                       <td className="muted">{r._row}</td>
                       <td><StatusBadge status={r.status} /></td>
+                      <td className="small" style={{ minWidth: 280, color: r.status === 'error' ? 'var(--red)' : 'var(--ink-2)' }}>{r.messages?.join('; ')}</td>
                       {columns.map((c) => <td key={c.key}>{c.render ? c.render(r) : r[c.key] || <span className="muted">—</span>}</td>)}
-                      <td className="small" style={{ color: r.status === 'error' ? 'var(--red)' : 'var(--ink-2)' }}>{r.messages?.join('; ')}</td>
                     </tr>
                   ))}
                 </tbody>

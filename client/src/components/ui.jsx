@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { X, Search, ChevronLeft, ChevronRight, Inbox, AlertCircle, CheckCircle2, Info } from 'lucide-react';
+import { X, Search, ChevronLeft, ChevronRight, Inbox, AlertCircle, CheckCircle2, Info, Eye, EyeOff } from 'lucide-react';
 import { api, initials } from '../api.js';
 
 /* ---------------- toasts ---------------- */
@@ -41,9 +41,11 @@ export function Modal({ title, onClose, children, footer, size = '', icon }) {
           {icon}
           <h3>{title}</h3>
           <div className="spacer" />
-          <button className="icon-btn" onClick={onClose} aria-label="Close">
-            <X size={18} />
-          </button>
+          {onClose && (
+            <button className="icon-btn" onClick={onClose} aria-label="Close">
+              <X size={18} />
+            </button>
+          )}
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}
@@ -109,13 +111,15 @@ const STATUS = {
   rejected: ['red', 'Rejected'],
   cancelled: ['', 'Cancelled'],
   new: ['green', 'New'],
-  update: ['blue', 'Update'],
-  duplicate: ['amber', 'Duplicate'],
+  update: ['blue', 'Access update'],
+  duplicate: ['amber', 'Already exists'],
   error: ['red', 'Error'],
   not_left: ['', 'Not left'],
   out: ['amber', 'Out of plant'],
   returned: ['green', 'Returned'],
+  not_returned: ['red', 'Did not return'],
 };
+export const statusLabel = (s) => (STATUS[s] || [null, s])[1];
 export function StatusBadge({ status, label }) {
   const [c, l] = STATUS[status] || ['', status];
   return (
@@ -126,7 +130,27 @@ export function StatusBadge({ status, label }) {
   );
 }
 
-export function Field({ label, required, hint, children, className = '' }) {
+/** Password box with a show / hide eye button. Takes the same props as <input>. */
+export function PasswordInput({ className = 'input', style, ...props }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="pw-wrap" style={style}>
+      <input {...props} className={className} type={show ? 'text' : 'password'} />
+      <button
+        type="button"
+        className="pw-eye"
+        tabIndex={-1}
+        title={show ? 'Hide password' : 'Show password'}
+        aria-label={show ? 'Hide password' : 'Show password'}
+        onClick={() => setShow((v) => !v)}
+      >
+        {show ? <EyeOff size={17} /> : <Eye size={17} />}
+      </button>
+    </div>
+  );
+}
+
+export function Field({ label, required, hint, error, warn, children, className = '' }) {
   return (
     <div className={`field ${className}`}>
       {label && (
@@ -135,7 +159,7 @@ export function Field({ label, required, hint, children, className = '' }) {
         </label>
       )}
       {children}
-      {hint && <div className="hint">{hint}</div>}
+      {error ? <div className="field-err">{error}</div> : warn ? <div className="field-warn">{warn}</div> : hint && <div className="hint">{hint}</div>}
     </div>
   );
 }
