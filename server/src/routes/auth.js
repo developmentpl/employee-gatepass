@@ -3,7 +3,8 @@ import bcrypt from 'bcryptjs';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import config from '../config.js';
 import { one, q } from '../db.js';
-import { HttpError, nowStr } from '../util.js';
+import { HttpError, nowStr, todayStr } from '../util.js';
+import { visibleCond } from '../services/approvals.js';
 import { signToken, requireAuth } from '../middleware/auth.js';
 import { audit } from '../services/audit.js';
 import { savePhoto, removePhoto, memUpload } from '../services/photos.js';
@@ -28,14 +29,15 @@ async function finishLogin(req, res, user, method) {
 }
 
 r.post('/login', async (req, res) => {
-  const email = String(req.body?.email || '').trim().toLowerCase();
+  // "email" may be an email address or a Login ID / Employee ID (security gate logins have no email)
+  const login = String(req.body?.email || req.body?.login || '').trim();
   const password = String(req.body?.password || '');
-  if (!email || !password) throw new HttpError(400, 'Enter email and password');
-  const user = await one(`SELECT * FROM users WHERE email=? AND is_deleted=0`, [email]);
+  if (!login || !password) throw new HttpError(400, 'Enter your email or login ID, and password');
+  const user = await one(`SELECT * FROM users WHERE (email=? OR emp_code=?) AND is_deleted=0 ORDER BY email=? DESC LIMIT 1`, [login.toLowerCase(), login, login.toLowerCase()]);
   const ok = user && user.password_hash && (await bcrypt.compare(password, user.password_hash));
   if (!ok) {
-    await audit(req, { module: 'auth', action: 'login_failed', description: `Failed sign-in for ${email}`, actor: user || { name: email } });
-    throw new HttpError(401, 'Incorrect email or password');
+    await audit(req, { module: 'auth', action: 'login_failed', description: `Failed sign-in for ${login}`, actor: user || { name: login } });
+    throw new HttpError(401, 'Incorrect login or password');
   }
   if (!user.is_active) throw new HttpError(403, 'Your account is inactive. Contact the administrator.');
   await finishLogin(req, res, user, 'password');
@@ -102,18 +104,36 @@ r.get('/me', requireAuth, async (req, res) => {
   });
 });
 
-/** Badge counts for the sidebar. */
+/** Badge counts for the sidebar and bell. */
 r.get('/summary', requireAuth, async (req, res) => {
   const u = req.user;
+  const vis = await visibleCond();
   const approvals = await one(
     `SELECT COUNT(*) c FROM pass_approvers pa JOIN gate_passes g ON g.id=pa.pass_id
-      WHERE pa.approver_id=? AND g.status='pending'`,
+      WHERE pa.approver_id=? AND g.status='pending' AND ${vis.sql}`,
+    [u.id, ...vis.params]
+  );
+  const notReturned = await one(
+    `SELECT COUNT(*) c FROM pass_approvers pa JOIN gate_passes g ON g.id=pa.pass_id
+      WHERE pa.approver_id=? AND g.nr_status='reason_submitted' AND g.gate_status='out'`,
     [u.id]
   );
   const mine = await one(`SELECT COUNT(*) c FROM gate_passes WHERE user_id=? AND status='pending'`, [u.id]);
-  const out = { approvalsPending: approvals.c, myPending: mine.c };
+  const myActions = await one(`SELECT COUNT(*) c FROM gate_passes WHERE user_id=? AND nr_status='awaiting_reason' AND gate_status='out'`, [u.id]);
+  const unread = await one(`SELECT COUNT(*) c FROM notifications WHERE user_id=? AND is_read=0`, [u.id]);
+  const out = {
+    approvalsPending: approvals.c + notReturned.c,
+    myPending: mine.c + myActions.c,
+    myActions: myActions.c,
+    unread: unread.c,
+  };
   if (u.role === 'admin') {
-    out.adminPending = (await one(`SELECT COUNT(*) c FROM gate_passes WHERE status='pending'`)).c;
+    out.adminPending = (await one(`SELECT COUNT(*) c FROM gate_passes WHERE status='pending' OR (nr_status='reason_submitted' AND gate_status='out')`)).c;
+  }
+  if (['security', 'security_admin', 'admin'].includes(u.role)) {
+    out.gateWaiting = (await one(
+      `SELECT COUNT(*) c FROM gate_passes WHERE status='approved' AND gate_status='not_left' AND pass_date=?`, [todayStr()]
+    )).c;
   }
   res.json(out);
 });
