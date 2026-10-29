@@ -38,27 +38,25 @@ export function parseDateTime(v, timePart) {
 }
 
 /**
- * Store punches, skipping duplicates (same eSSL ID + same time).
- * punches: [{ code, time, direction, verify, device }]
+ * Store punches, skipping duplicates (same device user ID + same time).
+ * punches: [{ code, time, direction, verify, device }]; vendor: 'essl' | 'solus'
  */
-export async function insertPunches(punches, source) {
+export async function insertPunches(punches, source, vendor = 'essl') {
   const valid = punches.filter((p) => p && p.code && p.time);
   let inserted = 0;
   for (let i = 0; i < valid.length; i += 500) {
     const chunk = valid.slice(i, i + 500);
     const res = await q(
-      `INSERT IGNORE INTO attendance_punches (essl_code, punch_time, direction, verify_mode, device_sn, source) VALUES ?`,
-      [chunk.map((p) => [String(p.code).trim(), p.time, p.direction || 'unknown', p.verify ?? null, p.device ?? null, source])]
+      `INSERT IGNORE INTO attendance_punches (essl_code, punch_time, direction, verify_mode, device_sn, source, vendor) VALUES ?`,
+      [chunk.map((p) => [String(p.code).trim(), p.time, p.direction || 'unknown', p.verify ?? null, p.device ?? null, source, vendor])]
     );
     inserted += res.affectedRows;
   }
   let unknownIds = [];
   if (valid.length) {
     const codes = [...new Set(valid.map((p) => String(p.code).trim()))];
-    const known = await q(
-      `SELECT COALESCE(NULLIF(essl_code,''), emp_code) k FROM users WHERE is_deleted=0 AND COALESCE(NULLIF(essl_code,''), emp_code) IN (?)`,
-      [codes]
-    );
+    const key = vendor === 'solus' ? `COALESCE(NULLIF(solus_code,''), emp_code)` : `COALESCE(NULLIF(essl_code,''), emp_code)`;
+    const known = await q(`SELECT ${key} k FROM users WHERE is_deleted=0 AND ${key} IN (?)`, [codes]);
     const set = new Set(known.map((k) => k.k.toLowerCase()));
     unknownIds = codes.filter((c) => !set.has(c.toLowerCase()));
   }
