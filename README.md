@@ -1,7 +1,11 @@
 # Harman Employee Gate Pass
 
 Digital version of the paper **Employee Gate Pass** used at Harman International (India), Mahalunge plant.
-An employee raises a gate pass → it goes to their assigned authorities → the **first authority to approve or reject decides it** → security marks the employee out/in at the gate. Attendance comes in from the eSSL biometric machines.
+An employee picks their shift and raises a gate pass → it goes to their **primary authority**; if nobody answers within 15 minutes
+(adjustable) the **secondary** also sees it, then the **third** after another 15 minutes — whoever answers first decides it →
+security checks the employee out and back in at the gate with the guard's name → if the employee does not come back in time they are
+asked for a reason, which their authorities accept or reject. Attendance comes in from eSSL and Solus biometric machines.
+Every user has a dashboard with charts (downloadable as PNG / Excel / PDF); admin and security also get a "Gate passes per person" table (this month / this year / dates, search, Excel).
 
 ```
 Software/
@@ -15,7 +19,7 @@ Software/
 
 | Software | Version | Download |
 |---|---|---|
-| Node.js | 20 or newer (LTS) | https://nodejs.org |
+| Node.js | 24 LTS (20.19 or newer works) | https://nodejs.org |
 | MySQL Server | 8.x (MariaDB 10.6+ also works) | https://dev.mysql.com/downloads/installer/ |
 
 The database and all tables are created automatically on first start — you only need a MySQL user.
@@ -52,9 +56,16 @@ npm start
 
 Open **http://localhost:5123** and sign in with the admin email/password from `.env`. You will be asked to set a new password.
 
-> **Want sample data to try it out?** Run `npm run seed:demo` once. It adds 11 demo employees
-> (password `Demo@1234`, e.g. `rahul.patil@harman.com`, `priya.joshi@harman.com`, `ravi.chavan@harman.com`), authorities,
-> gate passes and punches. Don't run it on the live database.
+> **Want sample data to try it out?** Run `npm run seed:demo` once. It adds demo employees, shifts, authorities,
+> two weeks of gate passes and punches. Password for all: `Demo@1234`
+> * employee `rahul.patil@harman.com`, authority `priya.joshi@harman.com`
+> * security admin `ravi.chavan@harman.com`
+> * gate logins `GATE1` and `GATE2` (sign in with the login ID instead of an email)
+>
+> Don't run it on the live database.
+
+**Updating an existing installation:** copy the new files over, then run `npm run setup`, `npm run build` and `npm start`.
+New tables and columns are added to the existing database automatically at start; nothing is lost.
 
 ### Keep it running as a Windows service
 
@@ -98,7 +109,7 @@ IT needs to do this once in **Azure Portal → Microsoft Entra ID → App regist
 
 ## 5. eSSL attendance
 
-Admin → **Attendance (eSSL)** shows punches and has three ways to get data in. Use any combination; duplicate punches are ignored.
+Admin → **Attendance (eSSL / Solus)** → eSSL tab shows punches and has three ways to get data in. Use any combination; duplicate punches are ignored.
 
 **a) Real-time push (recommended).** On each eSSL machine: *Menu → Comm. → Cloud Server Setting (ADMS)*
 → Server address = IP of the server PC, Server port = `5124` (API_PORT in `.env`), HTTPS off. Punches arrive within seconds.
@@ -121,23 +132,61 @@ same network (e.g. both `192.168.0.x`); open the firewall port (command above); 
 **Matching punches to employees:** the device user ID is matched to the user's *eSSL User ID*, or to the Employee ID if that's blank.
 Unmatched IDs are listed after an import.
 
+### Solus (iSOLUS ATTENDANCE)
+
+Admin → **Attendance (eSSL / Solus)** → Solus tab. Solus does not publish its machine protocol, so three ways are provided
+(not yet tested against a real Solus system — confirm with Solus / IT which one applies):
+
+* **Push URL (API)** – Solus or an integrator POSTs punches to `http://<server-IP>:5124/solus/punches` with the API key shown
+  on the page in the `X-API-Key` header. Body: JSON `[{"employeeId":"10234","time":"2026-10-24 09:01:00","direction":"IN","device":"Main gate"}]` or CSV.
+* **Read from the iSOLUS database** – SQL Server or MySQL. Enter server, database, user, password and a query that returns
+  `code` and `time` columns (`{since}` = last punch already read). *Test query*, *Read now*, or read automatically every N minutes.
+* **Import Solus export file** – CSV / Excel from the iSOLUS software.
+
+Solus punches are matched by the user's *Solus User ID*, or the Employee ID if blank.
+
 ## 6. Email notifications (optional)
 
-Fill the `SMTP_*` settings in `.env` (e.g. Office 365: `smtp.office365.com`, port 587). Authorities get an email when a
-request is raised; the employee gets one when it's approved or rejected. Leave `SMTP_HOST` blank to turn emails off.
+Admin → **Settings → Email notifications**. Enter the SMTP details of the mailbox the emails should come from, click
+**Save and send test**, and check the inbox (and spam). Leave *SMTP server* blank to turn emails off. (The `SMTP_*` values in
+`server\.env` still work; values saved on the Settings page take priority.)
+
+| Mail provider | SMTP server | Port / encryption | Username | Password |
+|---|---|---|---|---|
+| Microsoft 365 / Outlook (company mail) | `smtp.office365.com` | 587 / STARTTLS | full email address | the mailbox password, or an app password if MFA is on. IT must allow *Authenticated SMTP* for the mailbox. |
+| Gmail / Google Workspace | `smtp.gmail.com` | 587 / STARTTLS | full email address | a 16-letter **app password** (Google Account → Security → 2-Step Verification → App passwords) |
+| Other (cPanel / hosting / company server) | from your provider, e.g. `mail.yourdomain.com` | 587 STARTTLS or 465 SSL | usually the full email address | the mailbox password |
+
+Emails (and in-app bell notifications) go to: the authority when a request reaches them, the employee when it is approved,
+rejected or cancelled automatically, the employee when an admin raises a pass for them, the employee when they have not
+returned in time, and all their authorities when the reason is submitted.
 
 ## 7. Roles
 
 | Role | Sees |
 |---|---|
-| Employee | Requests (raise + track). **Approvals** tab appears automatically when someone has them as an authority. |
-| Security | Requests + **Gate Desk** (today's approved passes, Mark Out / Mark In). |
-| Admin | Everything: User Management, Access Management, Approvals (can decide on behalf of authorities), Logs, Attendance. |
+| Employee | Dashboard, Requests. **Approvals** appears automatically when someone has them as an authority. |
+| Security (gate login) | A shared login per gate (e.g. `GATE1`). **Gate Desk**: the guard on duty types or picks their name, then checks employees out and back in. |
+| Security admin | Like an employee, plus Gate Desk and **Security Setup** (add gate logins and security persons) and the plant dashboard. |
+| Admin | Everything: Dashboard, User Access Management, Approvals (decide or send on to the next authority), Logs, Attendance, Settings, Security. |
+
+**Settings (admin):** shifts with start/end times (employees pick one on every request; shown on the pass), minutes before a
+request goes to the next authority (default 15), hours after which a request nobody answered is **cancelled automatically**
+(default 8), minutes after the expected arrival before an employee is marked as not returned (default 60), and email.
+
+**Raising a pass for someone else:** admins use *Raise for an employee* (on Approvals or Requests). The pass is in the
+employee's name, goes to their authorities, shows "Raised by …", and the employee is notified.
+
+**Duplicates:** Employee ID (login ID) and email must be unique across all users and gate logins. The user form flags a clash
+while typing and will not save; a matching name only shows a warning. The default shift timings are examples — change them to the plant's real timings.
 
 ## 8. Bulk uploads
 
-User Management and Access Management each have **Bulk upload → Download sample**. After choosing a file you see a preview:
-*New* rows are imported, *Duplicate* rows (same Employee ID or email already in the system, or repeated in the file) and *Error* rows are skipped.
+User Access Management → **Bulk upload → Download sample**. One file holds the employee details and their primary / secondary /
+third authority (by Employee ID). After choosing a file you see a preview:
+*New* rows are added, *Access update* rows (existing employee, new authorities) update the authorities, *Already exists* rows
+change nothing, *Error* rows are skipped. An authority must already be a user or be a new row in the same file; otherwise the
+row says to add them as a user first.
 
 ## 9. Backups
 
@@ -174,8 +223,16 @@ and uses Node 24 (`engines` in `package.json`).
    ADMIN_PASSWORD=<temporary admin password>
    SEED_DEMO=true
    ```
-   `SEED_DEMO=true` adds the 11 demo employees once (password `Demo@1234`). Leave it out for an empty site.
+   `SEED_DEMO=true` adds the demo employees, gate logins `GATE1`/`GATE2`, shifts and two weeks of history to an empty
+   database (password `Demo@1234`). Leave it out for an empty site.
+   `SEED_DEMO=reset` (test sites only) clears all users except the admin, all gate passes, punches and logs, and loads the
+   current demo data. It runs once per demo version, so later restarts and redeploys keep what testers add. Use it when the
+   site still has older demo data.
 4. Optional, so photos survive redeploys: **right-click the service → Attach Volume**, mount path `/data`.
 5. **Settings → Networking → Generate Domain** (if asked for a port, enter `8080`). Send that `https://….up.railway.app` link to the client.
 
 **Updating the test site:** run `railway up` again (or push to GitHub). The on-prem install is unaffected; update it as in section 2.
+New tables and columns are added to the Railway database automatically when the new version starts.
+
+**Email on Railway:** Railway allows outgoing SMTP only on its **Pro** plan; on Free, Trial and Hobby plans the test email on
+Settings → Email fails with a timeout. In-app notifications (the bell) work on every plan.
