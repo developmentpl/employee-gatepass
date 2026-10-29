@@ -1,6 +1,7 @@
 import mysql from 'mysql2/promise';
 import bcrypt from 'bcryptjs';
 import config from './config.js';
+import { migrate } from './migrate.js';
 
 let pool;
 
@@ -157,6 +158,7 @@ export async function initDb() {
   pool.pool.on('connection', (c) => c.query(`SET time_zone='${tz}'`));
 
   for (const sql of SCHEMA) await pool.query(sql);
+  await migrate(pool, database);
   await seedAdmin();
 }
 

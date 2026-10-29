@@ -53,7 +53,9 @@ const config = {
   // Where employee photos are stored. Hosted: a Railway volume if one is attached.
   uploadDir: env.UPLOAD_DIR || (hosted && env.RAILWAY_VOLUME_MOUNT_PATH ? `${env.RAILWAY_VOLUME_MOUNT_PATH}/uploads` : ''),
   // Fill the database with demo employees on first start (test site only)
-  seedDemo: env.SEED_DEMO === 'true',
+  seedDemo: env.SEED_DEMO === 'true' || env.SEED_DEMO === 'reset',
+  // SEED_DEMO=reset: clear everything except the admin and load fresh demo data, once per DEMO_VERSION (test sites only)
+  seedDemoReset: env.SEED_DEMO === 'reset',
   admin: {
     email: (env.ADMIN_EMAIL || 'admin@harman.com').toLowerCase(),
     password: env.ADMIN_PASSWORD || 'Admin@123',

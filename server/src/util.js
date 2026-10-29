@@ -34,14 +34,15 @@ export function likeTerm(s) {
   return `%${String(s).replace(/[\\%_]/g, (m) => '\\' + m)}%`;
 }
 
-export const ROLES = ['user', 'admin', 'security'];
+export const ROLES = ['user', 'admin', 'security', 'security_admin'];
+/** Roles an employee account can have (security gate logins are managed separately). */
+export const EMPLOYEE_ROLES = ['user', 'admin', 'security_admin'];
 
-export const REASON_TYPES = [
-  'Client Visit',
-  'Official Work',
-  'Medical Emergency',
-  'Lunch',
-  'Personal Work',
-  'Bank Work',
-  'Other',
-];
+export const REASON_TYPES = ['Official Purpose', 'Personal Purpose'];
+
+/** SQL: does punch p belong to user u? eSSL punches match the eSSL ID, Solus punches the Solus ID (else the Employee ID). */
+export const PUNCH_MATCH = (u = 'u', p = 'p') =>
+  `((${p}.vendor='essl' AND ${p}.essl_code = COALESCE(NULLIF(${u}.essl_code,''), ${u}.emp_code)) OR (${p}.vendor='solus' AND ${p}.essl_code = COALESCE(NULLIF(${u}.solus_code,''), ${u}.emp_code)))`;
+
+/** 'HH:MM' from a TIME or DATETIME string. */
+export const hm = (t) => (t ? String(t).slice(t.length > 8 ? 11 : 0, (t.length > 8 ? 11 : 0) + 5) : '');

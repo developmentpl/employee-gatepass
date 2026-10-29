@@ -14,9 +14,15 @@ import passRoutes from './routes/passes.js';
 import logRoutes from './routes/logs.js';
 import metaRoutes from './routes/meta.js';
 import attendanceRoutes from './routes/attendance.js';
+import settingsRoutes from './routes/settings.js';
+import notificationRoutes from './routes/notifications.js';
+import securityRoutes from './routes/security.js';
+import dashboardRoutes from './routes/dashboard.js';
 import admsRoutes from './essl/adms.js';
+import solusPushRoutes from './solus/push.js';
+import { startPassJobs } from './services/passJobs.js';
 import { startScheduler } from './essl/scheduler.js';
-import { seedDemo, hasDemoData } from './services/demoData.js';
+import { seedDemo, hasDemoData, resetDemoIfNeeded } from './services/demoData.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -29,6 +35,8 @@ api.disable('x-powered-by');
 
 // eSSL devices push here (must stay at /iclock and come before the JSON parser)
 api.use('/iclock', admsRoutes);
+// Solus / integrator pushes punches here with an API key
+api.use('/solus', solusPushRoutes);
 
 api.use(express.json({ limit: '15mb' }));
 api.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '7d', index: false }));
@@ -40,6 +48,10 @@ api.use('/api/authorities', requireAuth, authorityRoutes);
 api.use('/api/passes', requireAuth, passRoutes);
 api.use('/api/logs', requireAuth, logRoutes);
 api.use('/api/attendance', requireAuth, attendanceRoutes);
+api.use('/api/settings', requireAuth, settingsRoutes);
+api.use('/api/notifications', requireAuth, notificationRoutes);
+api.use('/api/security', requireAuth, securityRoutes);
+api.use('/api/dashboard', requireAuth, dashboardRoutes);
 api.get('/api/health', (_req, res) => res.json({ ok: true, service: 'backend' }));
 api.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 
@@ -113,7 +125,9 @@ const listen = (server, port, label) =>
 
 initDb()
   .then(async () => {
-    if (config.seedDemo && !(await hasDemoData())) {
+    if (config.seedDemoReset && (await resetDemoIfNeeded())) {
+      console.log('[setup] SEED_DEMO=reset: old data cleared and fresh demo data loaded (once). Demo users sign in with password Demo@1234');
+    } else if (config.seedDemo && !(await hasDemoData())) {
       await seedDemo();
       console.log('[setup] Demo data added (SEED_DEMO=true). Demo users sign in with password Demo@1234');
     }
@@ -125,6 +139,7 @@ initDb()
       await listen(app, config.appPort, `Web app running on http://localhost:${config.appPort}`);
     }
     startScheduler();
+    startPassJobs();
   })
   .catch((e) => {
     if (e.code === 'EADDRINUSE' || e.syscall === 'listen') process.exit(1);
