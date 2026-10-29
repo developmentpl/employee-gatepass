@@ -21,6 +21,7 @@
     "xlsx": "^0.18.5"
   },
   "optionalDependencies": {
-    "node-zklib": "^1.3.0"
+    "node-zklib": "^1.3.0",
+    "mssql": "^12.7.11"
   }
 }
