@@ -3,6 +3,7 @@ import { Radio, Network, Usb, RefreshCw, Download, Upload, Save, Fingerprint } f
 import { api, download, fmtDate, fmtTime, fmtDateTime, todayISO } from '../../api.js';
 import { Avatar, Alert, Field, SearchBox, Pagination, Empty, useList, useMeta, useToast } from '../../components/ui.jsx';
 import DeviceUsers from '../../components/DeviceUsers.jsx';
+import SolusPanel from '../../components/SolusPanel.jsx';
 
 function Stat({ label, value, hint }) {
   return (
@@ -40,7 +41,8 @@ export default function AttendancePage() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const fileRef = useRef(null);
-  const list = useList('/attendance/punches', { from: todayISO(), to: todayISO(), search: '', source: '', department: '' }, 25);
+  const list = useList('/attendance/punches', { from: todayISO(), to: todayISO(), search: '', source: '', vendor: '', department: '' }, 25);
+  const [system, setSystem] = useState('essl');
   const f = list.filters;
 
   const [serverInfo, setServerInfo] = useState(null);
@@ -116,8 +118,8 @@ export default function AttendancePage() {
     <>
       <div className="page-head">
         <div>
-          <h1>Attendance (eSSL)</h1>
-          <p>Punches from the eSSL biometric machines — received in real time, pulled over the network, or imported from a USB pen drive.</p>
+          <h1>Attendance (eSSL / Solus)</h1>
+          <p>Punches from the biometric machines. eSSL: real-time push, network pull or USB pen drive. Solus: push URL, database read or export file.</p>
         </div>
       </div>
 
@@ -128,7 +130,18 @@ export default function AttendancePage() {
         <Stat label="Out on gate pass now" value={summary?.outOnPass} />
       </div>
 
-      {settings && (
+      <div className="tabpanel-tabs">
+        <button className={system === 'essl' ? 'on' : ''} onClick={() => setSystem('essl')}>eSSL</button>
+        <button className={system === 'solus' ? 'on' : ''} onClick={() => setSystem('solus')}>Solus</button>
+      </div>
+
+      {system === 'solus' && (
+        <div style={{ marginBottom: 16 }}>
+          <SolusPanel ips={ips} port={port} onData={() => { list.reload(); loadSummary(); }} />
+        </div>
+      )}
+
+      {system === 'essl' && settings && (
         <div className="conn-grid">
           <div className="card">
             <div className="card-head"><Radio size={18} color="var(--blue)" /><h3>Real-time push (ADMS)</h3><span className="badge green">Recommended</span></div>
@@ -249,7 +262,7 @@ export default function AttendancePage() {
         </div>
       )}
 
-      <DeviceUsers hasPullIp={!!settings?.['essl.pull.ip']} />
+      {system === 'essl' && <DeviceUsers hasPullIp={!!settings?.['essl.pull.ip']} />}
 
       <div className="card">
         <div className="card-head">
@@ -261,7 +274,12 @@ export default function AttendancePage() {
           </button>
         </div>
         <div className="toolbar">
-          <SearchBox value={f.search} onChange={(v) => list.setFilter('search', v)} placeholder="Name, employee or eSSL ID" />
+          <SearchBox value={f.search} onChange={(v) => list.setFilter('search', v)} placeholder="Name, employee or device ID" />
+          <select className="input" value={f.vendor} onChange={(e) => list.setFilter('vendor', e.target.value)}>
+            <option value="">eSSL and Solus</option>
+            <option value="essl">eSSL only</option>
+            <option value="solus">Solus only</option>
+          </select>
           <select className="input" value={f.department} onChange={(e) => list.setFilter('department', e.target.value)}>
             <option value="">All departments</option>
             {meta.departments.map((d) => <option key={d}>{d}</option>)}
@@ -270,7 +288,10 @@ export default function AttendancePage() {
             <option value="">All sources</option>
             <option value="push">Real-time push</option>
             <option value="pull">Network pull</option>
-            <option value="usb">USB / file</option>
+            <option value="usb">eSSL USB / file</option>
+            <option value="solus_push">Solus push</option>
+            <option value="solus_db">Solus database</option>
+            <option value="solus_file">Solus file</option>
           </select>
           <div className="row">
             <input className="input" type="date" value={f.from} onChange={(e) => list.setFilter('from', e.target.value || todayISO())} />
@@ -313,7 +334,7 @@ export default function AttendancePage() {
                     <td>{r.department || '—'}</td>
                     <td>{r.direction === 'unknown' ? <span className="muted">—</span> : <span className={`badge ${r.direction === 'in' ? 'green' : 'amber'}`}>{r.direction.toUpperCase()}</span>}</td>
                     <td className="mono small">{r.device_sn || '—'}</td>
-                    <td><span className="badge">{{ push: 'Push', pull: 'Pull', usb: 'USB', manual: 'Manual' }[r.source]}</span></td>
+                    <td><span className={`badge ${r.vendor === 'solus' ? 'blue' : ''}`}>{{ push: 'eSSL push', pull: 'eSSL pull', usb: 'eSSL USB', manual: 'Manual', solus_push: 'Solus push', solus_db: 'Solus DB', solus_file: 'Solus file' }[r.source] || r.source}</span></td>
                   </tr>
                 ))}
               </tbody>

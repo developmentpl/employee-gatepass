@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Download, ClipboardCheck } from 'lucide-react';
+import { Download, ClipboardCheck, UserPlus } from 'lucide-react';
 import { download, fmtDate, fmtTime, fmtDateTime, todayISO } from '../../api.js';
 import { useAuth } from '../../auth.jsx';
 import { Alert, SearchBox, Tabs, Pagination, Empty, StatusBadge, useList, useMeta, useToast } from '../../components/ui.jsx';
 import { PassModal } from '../../components/GatePass.jsx';
+import { NewPassModal } from '../MyRequests.jsx';
 
 export default function AdminApprovals() {
   const meta = useMeta();
@@ -11,6 +12,7 @@ export default function AdminApprovals() {
   const { summary, refreshSummary } = useAuth();
   const list = useList('/passes/all', { tab: 'pending', search: '', department: '', status: '', from: '', to: '' });
   const [viewId, setViewId] = useState(null);
+  const [raising, setRaising] = useState(false);
   const f = list.filters;
 
   return (
@@ -18,9 +20,12 @@ export default function AdminApprovals() {
       <div className="page-head">
         <div>
           <h1>Approvals</h1>
-          <p>Every gate pass request in the plant. Admins can approve or reject on behalf of authorities if needed.</p>
+          <p>Every gate pass request in the plant. Open a pending request to approve or reject it on an authority's behalf, or send it on to the next authority now.</p>
         </div>
         <div className="spacer" />
+        <button className="btn primary" onClick={() => setRaising(true)}>
+          <UserPlus size={16} /> Raise for an employee
+        </button>
         <button
           className="btn"
           onClick={() => download('/passes/all', { ...f, format: 'csv' }, `gate-passes-${todayISO()}.csv`).catch((e) => toast(e.message, 'error'))}
@@ -37,7 +42,8 @@ export default function AdminApprovals() {
               list.setFilter('status', '');
             }}
             items={[
-              { value: 'pending', label: 'Pending', count: summary.adminPending },
+              { value: 'pending', label: 'Pending', count: list.counts?.pending },
+              { value: 'not_returned', label: 'Did not return', count: list.counts?.not_returned },
               { value: 'completed', label: 'Completed' },
               { value: 'all', label: 'All' },
             ]}
@@ -47,7 +53,7 @@ export default function AdminApprovals() {
             <option value="">All departments</option>
             {meta.departments.map((d) => <option key={d}>{d}</option>)}
           </select>
-          {f.tab !== 'pending' && (
+          {(f.tab === 'completed' || f.tab === 'all') && (
             <select className="input" value={f.status} onChange={(e) => list.setFilter('status', e.target.value)}>
               <option value="">Any status</option>
               {f.tab === 'all' && <option value="pending">Pending</option>}
@@ -72,7 +78,7 @@ export default function AdminApprovals() {
                 <tr>
                   <th>Pass</th>
                   <th>Employee</th>
-                  <th>Reason</th>
+                  <th>Purpose · Reason</th>
                   <th>Out → In</th>
                   <th>Authorities</th>
                   <th>Status</th>
@@ -89,6 +95,7 @@ export default function AdminApprovals() {
                     <td>
                       <div style={{ fontWeight: 600 }}>{p.emp_name}</div>
                       <div className="small muted">{p.emp_code} · {p.department}</div>
+                      {p.raised_by_name && <div className="small muted">Raised by {p.raised_by_name}</div>}
                     </td>
                     <td style={{ maxWidth: 260 }}>
                       <span className="badge blue">{p.reason_type}</span>
@@ -97,15 +104,27 @@ export default function AdminApprovals() {
                     <td className="nowrap">
                       {fmtTime(p.out_time)} → {p.coming_back ? fmtTime(p.expected_in_time) : <span className="muted">not returning</span>}
                     </td>
-                    <td className="small">{p.approvers}</td>
+                    <td className="small" style={{ maxWidth: 220 }}>
+                      {p.approvers}
+                      {p.status === 'pending' && p.reached && (
+                        <div className="muted">Can see it now: {p.reached}</div>
+                      )}
+                    </td>
                     <td>
                       <div className="stack" style={{ gap: 4, alignItems: 'flex-start' }}>
                         <StatusBadge status={p.status} />
                         {p.status === 'approved' && p.gate_status !== 'not_left' && <StatusBadge status={p.gate_status} />}
+                        {p.nr_status === 'awaiting_reason' && <span className="badge amber">Reason awaited</span>}
+                        {p.nr_status === 'reason_submitted' && <span className="badge amber">Reason to review</span>}
                       </div>
                     </td>
                     <td className="small">
-                      {p.decided_by_name ? (
+                      {p.decided_by_name === 'System' ? (
+                        <>
+                          Cancelled automatically
+                          <div className="muted">{fmtDateTime(p.decided_at)}</div>
+                        </>
+                      ) : p.decided_by_name ? (
                         <>
                           {p.decided_by_name}
                           <div className="muted">{fmtDateTime(p.decided_at)}</div>
@@ -124,6 +143,16 @@ export default function AdminApprovals() {
         )}
         <Pagination page={list.page} pageSize={list.pageSize} total={list.total} onPage={list.setPage} onPageSize={list.setPageSize} />
       </div>
+      {raising && (
+        <NewPassModal
+          forOther
+          onClose={() => setRaising(false)}
+          onCreated={() => {
+            list.reload();
+            refreshSummary();
+          }}
+        />
+      )}
       {viewId && (
         <PassModal
           id={viewId}

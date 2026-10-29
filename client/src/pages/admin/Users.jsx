@@ -1,12 +1,13 @@
-import { useState } from 'react';
-import { Plus, FileUp, Pencil, Trash2, KeyRound, Power, Users as UsersIcon } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Plus, FileUp, Pencil, Trash2, KeyRound, Power, Users as UsersIcon, Info } from 'lucide-react';
 import { api, fmtTime } from '../../api.js';
 import { useAuth } from '../../auth.jsx';
-import { Avatar, Modal, Confirm, Alert, Field, SearchBox, Pagination, Empty, StatusBadge, useList, useMeta, useToast } from '../../components/ui.jsx';
+import { Avatar, Modal, Confirm, Alert, Field, SearchBox, Pagination, Empty, useList, useMeta, useToast, PasswordInput } from '../../components/ui.jsx';
 import PhotoPicker from '../../components/PhotoPicker.jsx';
 import BulkUpload from '../../components/BulkUpload.jsx';
+import EmployeePicker from '../../components/EmployeePicker.jsx';
 
-const ROLE_LABEL = { user: 'Employee', admin: 'Admin', security: 'Security' };
+const ROLE_LABEL = { user: 'Employee', admin: 'Admin', security_admin: 'Security admin' };
 
 function Presence({ u }) {
   if (!u.last_punch) return <span className="badge">No punch today</span>;
@@ -18,6 +19,18 @@ function Presence({ u }) {
     </span>
   );
 }
+
+function AuthCell({ name, code }) {
+  if (!name) return <span className="muted">—</span>;
+  return (
+    <div style={{ lineHeight: 1.25 }}>
+      <div style={{ fontWeight: 500 }}>{name}</div>
+      <div className="small muted">{code}</div>
+    </div>
+  );
+}
+
+const pick = (id, name, code) => (id ? { id, name, emp_code: code } : null);
 
 function UserForm({ user, onClose, onSaved }) {
   const meta = useMeta();
@@ -32,17 +45,36 @@ function UserForm({ user, onClose, onSaved }) {
     shift: user?.shift || '',
     role: user?.role || 'user',
     essl_code: user?.essl_code || '',
+    solus_code: user?.solus_code || '',
   });
   const [photo, setPhoto] = useState(user?.photo || null);
+  const [p, setP] = useState(user ? pick(user.primary_id, user.primary_name, user.primary_code) : null);
+  const [s, setS] = useState(user ? pick(user.secondary_id, user.secondary_name, user.secondary_code) : null);
+  const [t, setT] = useState(user ? pick(user.third_id, user.third_name, user.third_code) : null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [chk, setChk] = useState({}); // live duplicate check: { emp_code, email, name }
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const ids = (...xs) => xs.filter(Boolean).map((x) => x.id).concat(user ? [user.id] : []);
+
+  // Check Employee ID / email / name against existing users while typing.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      api('/users/check-unique', { query: { emp_code: f.emp_code.trim(), email: f.email.trim(), name: f.name.trim(), exceptId: user?.id || '' } })
+        .then(setChk)
+        .catch(() => {});
+    }, 350);
+    return () => clearTimeout(t);
+  }, [f.emp_code, f.email, f.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  const clash = chk.emp_code || chk.email;
 
   const submit = async (e) => {
     e.preventDefault();
     setErr('');
+    if (!p && (s || t)) return setErr('Choose the primary authority first');
+    if (clash) return setErr(clash);
     setBusy(true);
-    const body = { ...f };
+    const body = { ...f, primary_id: p?.id || null, secondary_id: s?.id || null, third_id: t?.id || null };
     if (photo && photo.startsWith('data:')) body.dataUrl = photo;
     if (user && user.photo && !photo) body.removePhoto = '1';
     try {
@@ -66,32 +98,30 @@ function UserForm({ user, onClose, onSaved }) {
       footer={
         <>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" form="userform" disabled={busy}>{busy ? 'Saving…' : user ? 'Save changes' : 'Add user'}</button>
+          <button className="btn primary" form="userform" disabled={busy || !!clash}>{busy ? 'Saving…' : user ? 'Save changes' : 'Add user'}</button>
         </>
       }
     >
       <form id="userform" className="stack" onSubmit={submit}>
         {err && <Alert type="error">{err}</Alert>}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr)', gap: 16 }}>
-          <PhotoPicker value={photo} onChange={setPhoto} />
-        </div>
+        <PhotoPicker value={photo} onChange={setPhoto} />
         <div className="grid3">
-          <Field label="Employee ID" required>
-            <input className="input" value={f.emp_code} onChange={set('emp_code')} required maxLength={50} />
+          <Field label="Employee ID (login ID)" required error={chk.emp_code}>
+            <input className={`input ${chk.emp_code ? 'bad' : ''}`} value={f.emp_code} onChange={set('emp_code')} required maxLength={50} />
           </Field>
-          <Field label="Employee Name" required className="span2">
+          <Field label="Employee Name" required className="span2" warn={chk.name}>
             <input className="input" value={f.name} onChange={set('name')} required maxLength={150} />
           </Field>
-          <Field label="Email ID" required>
-            <input className="input" type="email" value={f.email} onChange={set('email')} required />
+          <Field label="Email ID" required error={chk.email}>
+            <input className={`input ${chk.email ? 'bad' : ''}`} type="email" value={f.email} onChange={set('email')} required />
           </Field>
           <Field label="Phone">
             <input className="input" value={f.phone} onChange={set('phone')} />
           </Field>
-          <Field label="Role" hint="Security can mark gate out / in">
+          <Field label="Role">
             <select className="input" value={f.role} onChange={set('role')}>
               <option value="user">Employee</option>
-              <option value="security">Security</option>
+              <option value="security_admin">Security admin</option>
               <option value="admin">Admin</option>
             </select>
           </Field>
@@ -102,13 +132,42 @@ function UserForm({ user, onClose, onSaved }) {
           <Field label="Designation">
             <input className="input" value={f.designation} onChange={set('designation')} />
           </Field>
-          <Field label="Shift">
-            <input className="input" list="shift-list" value={f.shift} onChange={set('shift')} />
-            <datalist id="shift-list">{meta.shifts.map((d) => <option key={d} value={d} />)}</datalist>
+          <Field label="Shift" hint="Manage shifts under Settings">
+            <select className="input" value={f.shift} onChange={set('shift')}>
+              <option value="">Select…</option>
+              {meta.shiftList?.map((x) => (
+                <option key={x.name} value={x.name}>{x.name} ({x.start_time}–{x.end_time})</option>
+              ))}
+              {f.shift && !meta.shifts.includes(f.shift) && <option value={f.shift}>{f.shift} (not in shift list)</option>}
+            </select>
           </Field>
-          <Field label="eSSL User ID" hint="ID on the biometric device. Leave blank if same as Employee ID.">
+          <Field label="eSSL User ID" hint="Blank = same as Employee ID">
             <input className="input" value={f.essl_code} onChange={set('essl_code')} />
           </Field>
+          <Field label="Solus User ID" hint="Blank = same as Employee ID">
+            <input className="input" value={f.solus_code} onChange={set('solus_code')} />
+          </Field>
+        </div>
+
+        <div className="card card-pad" style={{ background: '#fafbfd' }}>
+          <div className="row" style={{ marginBottom: 10 }}>
+            <b>Access — approving authorities</b>
+            <span className="muted small">Requests go to Primary first, then Secondary and Third if not answered in time.</span>
+          </div>
+          <div className="grid3">
+            <Field label="Primary authority">
+              <EmployeePicker value={p} onChange={setP} exclude={ids(s, t)} />
+            </Field>
+            <Field label="Secondary authority" hint="Optional">
+              <EmployeePicker value={s} onChange={setS} exclude={ids(p, t)} />
+            </Field>
+            <Field label="Third authority" hint="Optional">
+              <EmployeePicker value={t} onChange={setT} exclude={ids(p, s)} />
+            </Field>
+          </div>
+          <div className="small muted row" style={{ marginTop: 8 }}>
+            <Info size={14} /> An authority must already be a user. Not in the list? Add them as a user first, then assign them here.
+          </div>
         </div>
         {!user && <Alert type="info">The user can sign in with Microsoft, or with the default password set by IT (they will be asked to change it).</Alert>}
       </form>
@@ -153,38 +212,59 @@ function ResetPassword({ user, onClose }) {
         </Alert>
       ) : (
         <Field label="Temporary password" hint="Leave blank to use the default password.">
-          <input className="input" value={pw} onChange={(e) => setPw(e.target.value)} />
+          <PasswordInput value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" />
         </Field>
       )}
     </Modal>
   );
 }
 
+const ref = (r, k) => (r[k] ? <>{r[`${k}_name`] || <span className="mono">{r[k]}</span>}{r[`${k}_name`] && <div className="small muted">{r[k]}</div>}</> : <span className="muted">—</span>);
+
 export default function UsersPage() {
   const { user: me } = useAuth();
   const meta = useMeta();
   const toast = useToast();
-  const list = useList('/users', { search: '', department: '', shift: '', role: '', status: '' });
+  const list = useList('/users', { search: '', department: '', shift: '', role: '', status: '', assigned: '' });
   const [editing, setEditing] = useState(null); // user | 'new'
   const [bulk, setBulk] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const [reset, setReset] = useState(null);
+  const c = list.counts || {};
 
   return (
     <>
       <div className="page-head">
         <div>
-          <h1>User Management</h1>
-          <p>All employees who can use the gate pass system.</p>
+          <h1>User Access Management</h1>
+          <p>Employees, their details and who approves their gate passes.</p>
         </div>
         <div className="spacer" />
         <button className="btn" onClick={() => setBulk(true)}><FileUp size={17} /> Bulk upload</button>
         <button className="btn primary" onClick={() => setEditing('new')}><Plus size={17} /> Add user</button>
       </div>
 
+      <div className="card card-pad headcount" style={{ marginBottom: 16 }}>
+        <div>
+          <div className="lbl">Total employees</div>
+          <div className="big">{c.total ?? '—'}</div>
+        </div>
+        <div><div className="lbl">Active</div><div style={{ fontSize: 20, fontWeight: 600 }}>{c.active ?? '—'}</div></div>
+        <div><div className="lbl">Inactive</div><div style={{ fontSize: 20, fontWeight: 600 }}>{c.inactive ?? '—'}</div></div>
+        <div>
+          <div className="lbl">Without authority</div>
+          <div style={{ fontSize: 20, fontWeight: 600 }}>
+            {c.unassigned ?? '—'}{' '}
+            {c.unassigned > 0 && (
+              <button className="btn sm ghost" onClick={() => list.setFilter('assigned', 'no')}>Show</button>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="card">
         <div className="toolbar">
-          <SearchBox value={list.filters.search} onChange={(v) => list.setFilter('search', v)} placeholder="Search name, ID, email, phone" />
+          <SearchBox value={list.filters.search} onChange={(v) => list.setFilter('search', v)} placeholder="Search name, ID, email, authority" />
           <select className="input" value={list.filters.department} onChange={(e) => list.setFilter('department', e.target.value)}>
             <option value="">All departments</option>
             {meta.departments.map((d) => <option key={d}>{d}</option>)}
@@ -196,8 +276,13 @@ export default function UsersPage() {
           <select className="input" value={list.filters.role} onChange={(e) => list.setFilter('role', e.target.value)}>
             <option value="">All roles</option>
             <option value="user">Employee</option>
-            <option value="security">Security</option>
+            <option value="security_admin">Security admin</option>
             <option value="admin">Admin</option>
+          </select>
+          <select className="input" value={list.filters.assigned} onChange={(e) => list.setFilter('assigned', e.target.value)}>
+            <option value="">With & without authority</option>
+            <option value="yes">Authority assigned</option>
+            <option value="no">No authority</option>
           </select>
           <select className="input" value={list.filters.status} onChange={(e) => list.setFilter('status', e.target.value)}>
             <option value="">Active & inactive</option>
@@ -214,12 +299,12 @@ export default function UsersPage() {
               <thead>
                 <tr>
                   <th>Employee</th>
-                  <th>Employee ID</th>
-                  <th>Department</th>
-                  <th>Shift</th>
+                  <th>Department · Shift</th>
                   <th>Role</th>
-                  <th>Today (eSSL)</th>
-                  <th>Status</th>
+                  <th>Primary</th>
+                  <th>Secondary</th>
+                  <th>Third</th>
+                  <th>Today</th>
                   <th className="actions">Actions</th>
                 </tr>
               </thead>
@@ -230,22 +315,22 @@ export default function UsersPage() {
                       <div className="person">
                         <Avatar src={u.photo} name={u.name} />
                         <div style={{ minWidth: 0 }}>
-                          <div className="nm">{u.name}</div>
-                          <div className="sub">{u.email}</div>
+                          <div className="nm">{u.name}{!u.is_active && <span className="badge" style={{ marginLeft: 6 }}>Inactive</span>}</div>
+                          <div className="sub"><span className="mono">{u.emp_code}</span> · {u.email}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="mono">{u.emp_code}</td>
                     <td>
                       {u.department || '—'}
-                      {u.designation && <div className="small muted">{u.designation}</div>}
+                      <div className="small muted">{u.designation ? `${u.designation} · ` : ''}Shift {u.shift || '—'}</div>
                     </td>
-                    <td>{u.shift || '—'}</td>
-                    <td><span className={`badge ${u.role === 'admin' ? 'blue' : u.role === 'security' ? 'amber' : ''}`}>{ROLE_LABEL[u.role]}</span></td>
+                    <td><span className={`badge ${u.role === 'admin' ? 'blue' : u.role === 'security_admin' ? 'amber' : ''}`} style={{ whiteSpace: 'normal' }}>{ROLE_LABEL[u.role] || u.role}</span></td>
+                    <td>{u.primary_id ? <AuthCell name={u.primary_name} code={u.primary_code} /> : <span className="badge amber">Not assigned</span>}</td>
+                    <td><AuthCell name={u.secondary_name} code={u.secondary_code} /></td>
+                    <td><AuthCell name={u.third_name} code={u.third_code} /></td>
                     <td><Presence u={u} /></td>
-                    <td><StatusBadge status={u.is_active ? 'approved' : 'cancelled'} label={u.is_active ? 'Active' : 'Inactive'} /></td>
                     <td className="actions">
-                      <button className="icon-btn" title="Edit" onClick={() => setEditing(u)}><Pencil size={16} /></button>
+                      <button className="icon-btn" title="Edit details and access" onClick={() => setEditing(u)}><Pencil size={16} /></button>
                       <button className="icon-btn" title="Reset password" onClick={() => setReset(u)}><KeyRound size={16} /></button>
                       {u.id !== me.id && (
                         <>
@@ -276,7 +361,7 @@ export default function UsersPage() {
                               setConfirm({
                                 title: 'Remove user',
                                 danger: true,
-                                message: `Remove ${u.name} (${u.emp_code})? They will also be removed as an authority for other employees. Past gate passes stay in the records.`,
+                                message: `Remove ${u.name} (${u.emp_code})? Where they are someone's authority, the next authority moves up. Past gate passes stay in the records.`,
                                 confirmText: 'Remove',
                                 onConfirm: async () => {
                                   await api(`/users/${u.id}`, { method: 'DELETE' });
@@ -305,20 +390,20 @@ export default function UsersPage() {
       {confirm && <Confirm {...confirm} onClose={() => setConfirm(null)} />}
       {bulk && (
         <BulkUpload
-          title="Bulk upload users"
+          title="Bulk upload users and access"
           base="/users"
-          sampleName="gatepass-users-sample.xlsx"
+          sampleName="gatepass-users-and-access.xlsx"
+          importable={['new', 'update']}
           onClose={() => setBulk(false)}
           onDone={list.reload}
-          note="Employees already in the system (same Employee ID or email) are detected and skipped, so no one is added twice. Photos can be added afterwards."
+          note="One file for both: employee details and their Primary / Secondary / Third authority (by Employee ID). Employees already in the system are flagged, and their details are left unchanged. An authority must already be a user, or be added as a new user in the same file."
           columns={[
             { key: 'emp_code', label: 'Emp ID' },
             { key: 'name', label: 'Name' },
-            { key: 'email', label: 'Email' },
-            { key: 'department', label: 'Department' },
-            { key: 'designation', label: 'Designation' },
             { key: 'shift', label: 'Shift' },
-            { key: 'role', label: 'Role' },
+            { key: 'primary', label: 'Primary', render: (r) => ref({ ...r, primary_name: r.authNames?.primary }, 'primary') },
+            { key: 'secondary', label: 'Secondary', render: (r) => ref({ ...r, secondary_name: r.authNames?.secondary }, 'secondary') },
+            { key: 'third', label: 'Third', render: (r) => ref({ ...r, third_name: r.authNames?.third }, 'third') },
           ]}
         />
       )}
