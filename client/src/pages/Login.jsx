@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, LogIn } from 'lucide-react';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { Alert, Field } from '../components/ui.jsx';
+import { Alert, Field, PasswordInput } from '../components/ui.jsx';
 
 function MsLogo() {
   return (
@@ -88,7 +88,7 @@ export default function Login() {
         <form className="box stack" onSubmit={submit}>
           <div>
             <h2 style={{ fontSize: 22 }}>Sign in</h2>
-            <p className="muted" style={{ margin: '4px 0 0' }}>Use your company email</p>
+            <p className="muted" style={{ margin: '4px 0 0' }}>Use your company email, or your Login ID</p>
           </div>
           {err && <Alert type="error">{err}</Alert>}
           {ms?.enabled && (
@@ -99,11 +99,11 @@ export default function Login() {
               <div className="or">or with password</div>
             </>
           )}
-          <Field label="Email ID">
-            <input className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+          <Field label="Email or Login ID">
+            <input className="input" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
           </Field>
           <Field label="Password">
-            <input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <PasswordInput autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </Field>
           <button className="btn primary" style={{ height: 42, justifyContent: 'center' }} disabled={busy}>
             <LogIn size={17} /> {busy ? 'Signing in…' : 'Sign in'}

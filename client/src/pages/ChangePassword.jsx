@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { KeyRound } from 'lucide-react';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { Alert, Field, useToast } from '../components/ui.jsx';
+import { Alert, Field, useToast, PasswordInput } from '../components/ui.jsx';
 
 export function PasswordForm({ onDone, forced }) {
   const [f, setF] = useState({ currentPassword: '', newPassword: '', confirm: '' });
@@ -30,13 +30,13 @@ export function PasswordForm({ onDone, forced }) {
     <form className="stack" onSubmit={submit}>
       {err && <Alert type="error">{err}</Alert>}
       <Field label={forced ? 'Current (temporary) password' : 'Current password'}>
-        <input className="input" type="password" value={f.currentPassword} onChange={set('currentPassword')} required autoComplete="current-password" />
+        <PasswordInput value={f.currentPassword} onChange={set('currentPassword')} required autoComplete="current-password" />
       </Field>
       <Field label="New password" hint="At least 8 characters with letters and numbers">
-        <input className="input" type="password" value={f.newPassword} onChange={set('newPassword')} required autoComplete="new-password" />
+        <PasswordInput value={f.newPassword} onChange={set('newPassword')} required autoComplete="new-password" />
       </Field>
       <Field label="Confirm new password">
-        <input className="input" type="password" value={f.confirm} onChange={set('confirm')} required autoComplete="new-password" />
+        <PasswordInput value={f.confirm} onChange={set('confirm')} required autoComplete="new-password" />
       </Field>
       <div>
         <button className="btn primary" disabled={busy}>
